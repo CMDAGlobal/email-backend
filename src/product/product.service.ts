@@ -126,11 +126,11 @@ export class ProductService {
  COALESCE((SELECT jsonb_object_agg(status,total) FROM (SELECT status,count(*)::int total FROM messages WHERE campaign_id=c.id GROUP BY status) x),'{}') counts,
  (SELECT count(DISTINCT e.message_id)::int FROM email_events e JOIN messages m ON m.id=e.message_id WHERE m.campaign_id=c.id AND e.type='open') opens,
  (SELECT count(DISTINCT e.message_id)::int FROM email_events e JOIN messages m ON m.id=e.message_id WHERE m.campaign_id=c.id AND e.type='click') clicks
- FROM campaigns c JOIN lists l ON l.id=c.list_id LEFT JOIN segments s ON s.id=c.segment_id ORDER BY c.created_at DESC`)).rows;}
+ FROM campaigns c LEFT JOIN lists l ON l.id=c.list_id LEFT JOIN segments s ON s.id=c.segment_id ORDER BY c.created_at DESC`)).rows;}
  async campaignSave(input:unknown,id?:string){const d=parse(campaignInput,input);
   if(!/{{\s*unsubscribe_url\s*}}/.test(d.html))throw new BadRequestException('Add an unsubscribe link to the email footer');
   return this.db.transaction(async c=>{
-   if(!(await c.query('SELECT 1 FROM lists WHERE id=$1',[d.listId])).rowCount)throw new BadRequestException('Choose an existing list');
+   if(d.listId&&!(await c.query('SELECT 1 FROM lists WHERE id=$1',[d.listId])).rowCount)throw new BadRequestException('Choose an existing list');
    if(d.segmentId&&!(await c.query('SELECT 1 FROM segments WHERE id=$1',[d.segmentId])).rowCount)throw new BadRequestException('Segment not found');
    if(id){const existing=(await c.query('SELECT status FROM campaigns WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!existing)throw new NotFoundException();if(existing.status!=='draft')throw new ConflictException('Only draft campaigns can be edited');}
    const values=[d.name,d.subject,d.html,d.listId,d.segmentId,d.previewText,d.design,d.trackingEnabled];
@@ -145,6 +145,7 @@ export class ProductService {
   const campaign=(await c.query('SELECT * FROM campaigns WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!campaign)throw new NotFoundException();
   if(action==='send'||action==='schedule'){
    if(campaign.status!=='draft')throw new ConflictException('Campaign must be a draft');
+   if(!campaign.list_id)throw new BadRequestException('Choose an audience list before queueing');
    if(action==='schedule'&&(!scheduledAt||new Date(scheduledAt).getTime()<Date.now()+60000))throw new BadRequestException('Schedule at least one minute in the future');
    const settings=(await c.query('SELECT data FROM workspace_settings WHERE id=true')).rows[0]?.data;
    if(config.SEND_MODE==='ses'&&(!settings?.company||!settings?.postalAddress))throw new BadRequestException('Set your company and postal address before live sending');

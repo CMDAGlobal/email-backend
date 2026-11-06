@@ -1,4 +1,4 @@
-import { Body,Controller,Delete,Get,Header,Inject,Param,ParseUUIDPipe,Patch,Post,Query,UseGuards } from '@nestjs/common';
+import { BadRequestException,Body,Controller,Delete,Get,Header,Inject,Param,ParseUUIDPipe,Patch,Post,Query,UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { ApiKeyGuard } from '../api/auth.guard';
 import { ProductService } from './product.service';
@@ -9,7 +9,7 @@ const idSchema=z.object({id:z.uuid()});
 @Controller('api/v1/manage') @UseGuards(ApiKeyGuard)
 export class ProductController {
  constructor(@Inject(ProductService) private readonly service:ProductService){}
- @Get('activity') async activity(){return (await this.service.db.query('SELECT e.type,e.created_at,c.email FROM email_events e JOIN messages m ON m.id=e.message_id JOIN contacts c ON c.id=m.contact_id ORDER BY e.created_at DESC LIMIT 30')).rows;}
+ @Get('activity') async activity(@Query('contactId') contactId?:string){const params:unknown[]=[];let filter='';if(contactId){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(contactId))throw new BadRequestException('Invalid contact');params.push(contactId);filter=' WHERE m.contact_id=$1';}return (await this.service.db.query(`SELECT e.type,e.created_at,c.email FROM email_events e JOIN messages m ON m.id=e.message_id JOIN contacts c ON c.id=m.contact_id${filter} ORDER BY e.created_at DESC LIMIT 30`,params)).rows;}
  @Get('contacts') contacts(@Query() q:unknown){return this.service.contacts(parse(z.object({search:z.string().max(200).default(''),status:z.enum(['all','subscribed','unsubscribed']).default('all'),listId:z.uuid().optional(),tagId:z.uuid().optional(),segmentId:z.uuid().optional(),page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(100).default(25)}),q));}
  @Post('contacts') contactCreate(@Body() d:unknown){return this.service.saveContactInput(d);}
  @Patch('contacts/:id') contactEdit(@Param('id',uuid) id:string,@Body() d:unknown){return this.service.saveContactInput(d,id);}
