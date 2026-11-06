@@ -1,0 +1,4 @@
+# Run Caddy on the host after replacing the domain and setting PUBLIC_API_URL.
+mail.example.com {
+ reverse_proxy 127.0.0.1:8080
+}
