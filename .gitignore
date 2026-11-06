@@ -5,3 +5,6 @@ dist/
 !.env.example
 coverage/
 *.log
+
+# CI workflows kept locally only (GitHub token lacks workflow scope)
+.github/
