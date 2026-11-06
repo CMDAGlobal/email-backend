@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Database } from './database';
-async function migrate() {
+export async function migrate() {
  const db = new Database();
  try {
   await db.transaction(async client => {
@@ -17,4 +17,6 @@ async function migrate() {
   });
  } finally { await db.onModuleDestroy(); }
 }
-migrate().catch(error => { console.error(error); process.exitCode=1; });
+// Run only when invoked directly (tsx src/db/migrate.ts / node dist/db/migrate.js),
+// not when imported by main.ts for RUN_MIGRATIONS_ON_BOOT.
+if (process.argv[1]?.includes('migrate')) migrate().catch(error => { console.error(error); process.exitCode=1; });

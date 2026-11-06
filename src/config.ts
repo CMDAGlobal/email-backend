@@ -13,6 +13,8 @@ const schema = z.object({
  CMDA_SYNC_SECRET:z.string().optional(),CMDA_FEEDBACK_SECRET:z.string().optional(),
  CMDA_FEEDBACK_URL:z.string().optional(),
  CMDA_MAX_SYNC_AGE_HOURS:z.coerce.number().int().min(1).max(168).default(24),
+ WORKER_ENABLED:z.enum(['true','false']).default('false').transform(v=>v==='true'),
+ RUN_MIGRATIONS_ON_BOOT:z.enum(['true','false']).default('false').transform(v=>v==='true'),
 });
 export const config = schema.parse(process.env);
 if (config.API_KEY === config.UNSUBSCRIBE_SECRET) throw new Error('Use distinct API and unsubscribe secrets');
