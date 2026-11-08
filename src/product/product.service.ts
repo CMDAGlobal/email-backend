@@ -171,8 +171,24 @@ export class ProductService {
     FROM dates d ORDER BY d.day`,[days,timezone]),this.campaigns(),
    this.db.query(`SELECT e.type,e.created_at,c.email FROM email_events e JOIN messages m ON m.id=e.message_id JOIN contacts c ON c.id=m.contact_id ORDER BY e.created_at DESC LIMIT 20`),
    this.db.query(`SELECT l.url,count(e.id)::int clicks FROM tracking_links l JOIN email_events e ON e.metadata->>'linkId'=l.id::text WHERE e.type='click' AND e.created_at>=now()-make_interval(days=>$1) GROUP BY l.url ORDER BY clicks DESC LIMIT 10`,[days])]);
+  const [previous,reputation,providers,heatmap]=await Promise.all([
+   this.db.query(`SELECT (SELECT count(*)::int FROM messages WHERE status='sent' AND sent_at>=now()-make_interval(days=>($1::int)*2) AND sent_at<now()-make_interval(days=>$1)) sent,
+   (SELECT count(DISTINCT e.message_id)::int FROM email_events e WHERE e.type='open' AND e.created_at>=now()-make_interval(days=>($1::int)*2) AND e.created_at<now()-make_interval(days=>$1)) opens,
+   (SELECT count(DISTINCT e.message_id)::int FROM email_events e WHERE e.type='click' AND e.created_at>=now()-make_interval(days=>($1::int)*2) AND e.created_at<now()-make_interval(days=>$1)) clicks,
+   (SELECT count(DISTINCT e.message_id)::int FROM email_events e WHERE e.type='delivery' AND e.created_at>=now()-make_interval(days=>($1::int)*2) AND e.created_at<now()-make_interval(days=>$1)) delivered`,[days]),
+   this.db.query(`SELECT (SELECT count(*)::int FROM messages WHERE status='sent' AND sent_at>=now()-make_interval(days=>$1)) sends,
+   (SELECT count(DISTINCT e.message_id)::int FROM email_events e WHERE e.type='delivery' AND e.created_at>=now()-make_interval(days=>$1)) delivered,
+   (SELECT count(DISTINCT e.message_id)::int FROM email_events e WHERE e.type='bounce' AND e.created_at>=now()-make_interval(days=>$1)) bounces,
+   (SELECT count(DISTINCT e.message_id)::int FROM email_events e WHERE e.type='complaint' AND e.created_at>=now()-make_interval(days=>$1)) complaints`,[days]),
+   this.db.query(`SELECT lower(split_part(c.email,'@',2)) domain,count(*)::int sends,
+   count(*) FILTER (WHERE EXISTS(SELECT 1 FROM email_events e WHERE e.message_id=m.id AND e.type='delivery' AND e.created_at>=now()-make_interval(days=>$1)))::int delivered
+   FROM messages m JOIN contacts c ON c.id=m.contact_id
+   WHERE m.status='sent' AND m.sent_at>=now()-make_interval(days=>$1)
+   GROUP BY 1 ORDER BY sends DESC LIMIT 6`,[days]),
+   this.db.query(`SELECT EXTRACT(dow FROM (e.created_at AT TIME ZONE $2))::int AS dow,EXTRACT(hour FROM (e.created_at AT TIME ZONE $2))::int AS hr,count(DISTINCT e.message_id)::int AS opens
+   FROM email_events e WHERE e.type='open' AND e.created_at>=now()-make_interval(days=>$1) GROUP BY 1,2`,[days,timezone])]);
   const states=(await this.db.query('SELECT status,count(*)::int total FROM messages WHERE created_at>=now()-make_interval(days=>$1) GROUP BY status',[days])).rows;
-  return {totals:totals.rows[0],timeline:timeline.rows,campaigns,recent:recent.rows,links:links.rows,states,sendMode:config.SEND_MODE,timezone};
+  return {totals:totals.rows[0],timeline:timeline.rows,campaigns,recent:recent.rows,links:links.rows,states,sendMode:config.SEND_MODE,timezone,previous:previous.rows[0],reputation:reputation.rows[0],providers:providers.rows,heatmap:heatmap.rows};
  }
  async reportCsv(days:number){const r=await this.reports(days);return [['Date','Sent','Dry run','Delivered','Unique opened per day','Unique clicked per day'],...r.timeline.map(v=>[v.day,v.sent,v.dry_run,v.delivered,v.opens,v.clicks])].map(row=>row.map(csvCell).join(',')).join('\r\n');}
  async suppressions(){return (await this.db.query('SELECT * FROM suppressions ORDER BY created_at DESC')).rows;}
