@@ -16,7 +16,7 @@ async function bootstrap() {
  app.use((req:Request,res:Response,next:NextFunction)=>{if(req.path.startsWith('/api/'))res.setHeader('Cache-Control','no-store');next();});
  // Serve the built React app from web/ when present so the SPA shares this origin
  // (session cookie is SameSite=strict and cannot work cross-domain).
- const webDirCandidates=[join(process.cwd(),'web'),join(__dirname,'..','web'),join(__dirname,'..','..','web')];
+ const webDirCandidates=[join(process.cwd(),'web'),join(__dirname,'web'),join(__dirname,'..','web'),join(__dirname,'..','..','web')];
  const webDir=webDirCandidates.find(c=>existsSync(join(c,'index.html')));
  if(webDir&&existsSync(join(webDir,'index.html'))){
   const instance=app.getHttpAdapter().getInstance();
