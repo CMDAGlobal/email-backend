@@ -1,59 +1,50 @@
 services:
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: dispatch
-      POSTGRES_PASSWORD: dispatch
-      POSTGRES_DB: dispatch
-    ports: ["127.0.0.1:5432:5432"]
-    volumes: ["postgres-data:/var/lib/postgresql/data"]
+  mongo:
+    image: mongo:8
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports: ["127.0.0.1:27017:27017"]
+    volumes: ["mongo-data:/data/db"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dispatch"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 5s
       timeout: 5s
-      retries: 15
-  redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
-    ports: ["127.0.0.1:6379:6379"]
-    volumes: ["redis-data:/data"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 15
+      retries: 20
+  mongo-init:
+    image: mongo:8
+    restart: "no"
+    depends_on:
+      mongo: {condition: service_healthy}
+    entrypoint: ["mongosh", "--host", "mongo:27017", "--quiet", "--eval", "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok }"]
   migrate:
     build: .
     env_file: .env
-    environment: &connection
-      DATABASE_URL: postgres://dispatch:dispatch@postgres:5432/dispatch
-      REDIS_URL: redis://redis:6379
+    environment: &mongo
+      MONGODB_URI: mongodb://mongo:27017/dispatch?replicaSet=rs0
+      MONGODB_DATABASE: dispatch
+      PORT: 3000
     command: ["node", "dist/db/migrate.js"]
     depends_on:
-      postgres: {condition: service_healthy}
+      mongo-init: {condition: service_completed_successfully}
   api:
     build: .
     env_file: .env
-    environment: *connection
+    environment: *mongo
     ports: ["127.0.0.1:3000:3000"]
     depends_on:
       migrate: {condition: service_completed_successfully}
-      redis: {condition: service_healthy}
     restart: unless-stopped
   worker:
     build: .
     env_file: .env
-    environment: *connection
+    environment: *mongo
     command: ["node", "dist/worker.js"]
     stop_grace_period: 45s
     depends_on:
       migrate: {condition: service_completed_successfully}
-      redis: {condition: service_healthy}
     restart: unless-stopped
   web:
     build: ../frontend
     ports: ["127.0.0.1:8080:80"]
     depends_on: [api]
 volumes:
-  postgres-data:
-  redis-data:
+  mongo-data:

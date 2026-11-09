@@ -23,16 +23,3 @@ export const formInput=z.object({name,slug:z.string().regex(/^[a-z0-9]+(?:-[a-z0
 export const settingsInput=z.object({name,company:z.string().max(200),postalAddress:z.string().max(1000),timezone:z.string().max(100).refine(v=>{try{new Intl.DateTimeFormat('en',{timeZone:v});return true;}catch{return false;}},'Invalid timezone'),replyTo:z.union([z.literal(''),z.email()]),trackingEnabled:z.boolean()});
 export const transactionalInput=z.object({to:z.email().transform(s=>s.toLowerCase()),subject,html:z.string().min(1).max(500000),variables:z.record(z.string(),z.unknown()).default({}),idempotencyKey:z.string().min(8).max(100).regex(/^[a-zA-Z0-9_-]+$/)});
 export function parse<T>(schema:z.ZodType<T>,input:unknown):T {const result=schema.safeParse(input);if(!result.success)throw new BadRequestException(result.error.issues.map(i=>`${i.path.join('.')}: ${i.message}`).join('; '));return result.data;}
-export function segmentWhere(input:Rule[],values:unknown[],alias='c'):string {
- return input.map(r=>{
-  values.push(r.value);const val=`$${values.length}`;
-  if(r.field==='tag'){if(r.operator!=='equals')throw new BadRequestException('Tags support equals only');return `EXISTS(SELECT 1 FROM contact_tags ct JOIN tags t ON t.id=ct.tag_id WHERE ct.contact_id=${alias}.id AND t.name=${val})`;}
-  let field:string;
-  if(r.field.startsWith('days_since_')){const type:{[key:string]:string}={days_since_open:'open',days_since_click:'click',days_since_delivery:'delivery'};field=`COALESCE((SELECT EXTRACT(EPOCH FROM now()-max(e.created_at))/86400 FROM email_events e JOIN messages m ON m.id=e.message_id WHERE m.contact_id=${alias}.id AND e.type='${type[r.field]}'),1000000)`;}
-  else if(r.field.startsWith('fields.')){values.push(r.field.slice(7));field=`(${alias}.fields->>$${values.length})`;}
-  else field=`${alias}.${r.field}`;
-  if(r.operator==='equals')return `${field}::text=${val}`;
-  if(r.operator==='contains')return `strpos(lower(COALESCE(${field}::text,'')),lower(${val}))>0`;
-  return `(CASE WHEN ${field}::text ~ '^-?[0-9]+([.][0-9]+)?$' THEN ${field}::text::numeric ELSE NULL END) ${r.operator==='greater_than'?'>':'<'} (CASE WHEN ${val}::text ~ '^-?[0-9]+([.][0-9]+)?$' THEN ${val}::text::numeric ELSE NULL END)`;
- }).map(s=>`(${s})`).join(' AND ')||'true';
-}

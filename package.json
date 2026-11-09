@@ -18,28 +18,27 @@
     "check": "tsc --noEmit && npm test",
     "setup": "node scripts/setup.mjs",
     "test:http": "npm run build && node --test test/http.test.cjs",
+    "test:cmda": "npm run build && node test/cmda-dry-run.cjs",
     "owner:create": "node scripts/create-owner.mjs",
     "owner:reset": "node scripts/create-owner.mjs --reset"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.0.0",
+    "@aws-sdk/client-sqs": "^3.0.0",
     "@nestjs/common": "^11.1.0",
     "@nestjs/core": "^11.1.0",
     "@nestjs/platform-express": "^11.1.0",
     "@nestjs/swagger": "^11.2.0",
-    "@aws-sdk/client-sesv2": "^3.0.0",
-    "@aws-sdk/client-sqs": "^3.0.0",
-    "bullmq": "^5.0.0",
     "dotenv": "^17.0.0",
     "helmet": "^8.0.0",
-    "pg": "^8.0.0",
+    "mongodb": "^6.22.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
     "@types/express": "^5.0.0",
-    "@types/pg": "^8.0.0",
+    "@types/node": "^22.0.0",
     "tsx": "^4.0.0",
     "typescript": "~5.9.0"
   },

@@ -6,8 +6,25 @@ const key='http-test-admin-key-'.padEnd(64,'x');
 const secret='http-test-signing-key-'.padEnd(64,'y');
 const base='http://127.0.0.1:3099';
 let server;
+
+function startFixtureServer(){
+ const {Database}=require('./dist/db/database');
+ Database.prototype.ready=async function(){};
+ Database.prototype.onModuleInit=async function(){};
+ Database.prototype.onModuleDestroy=async function(){};
+ Database.prototype.workspaceSettings=async function(){return {};};
+ Database.prototype.collection=function(name){return {
+  findOne:async filter=>name==='contacts'&&filter.id?{id:filter.id,email:'recipient@example.test'}:null,
+  find:()=>({sort:()=>({toArray:async()=>[]}),toArray:async()=>[]})
+ };};
+ Database.prototype.transaction=async function(){
+  throw new Error('Unexpected fixture database transaction');
+ };
+ require('./dist/main');
+}
+
 before(async()=>{
- server=spawn(process.execPath,['dist/main.js'],{cwd:require('node:path').resolve(__dirname,'..'),env:{...process.env,NODE_ENV:'test',PORT:'3099',DATABASE_URL:'postgres://unused:unused@127.0.0.1:1/unused',REDIS_URL:'redis://127.0.0.1:1',FRONTEND_ORIGIN:'http://localhost:5173',PUBLIC_API_URL:base,API_KEY:key,UNSUBSCRIBE_SECRET:secret,SEND_MODE:'dry-run',SES_FROM_EMAIL:'test@example.com'},stdio:'ignore'});
+ server=spawn(process.execPath,['-e',`(${startFixtureServer.toString()})()`],{cwd:require('node:path').resolve(__dirname,'..'),env:{...process.env,NODE_ENV:'test',PORT:'3099',MONGODB_URI:'mongodb://127.0.0.1:1/dispatch?serverSelectionTimeoutMS=50',MONGODB_DATABASE:'dispatch_http_fixture',FRONTEND_ORIGIN:'http://localhost:5173',PUBLIC_API_URL:base,API_KEY:key,UNSUBSCRIBE_SECRET:secret,SEND_MODE:'dry-run',SES_FROM_EMAIL:'test@example.com',WORKER_ENABLED:'false',RUN_MIGRATIONS_ON_BOOT:'false',CMDA_ENABLED:'false'},stdio:'ignore'});
  for(let i=0;i<100;i++){
   try{if((await fetch(base+'/health')).ok)return;}catch{}
   await new Promise(r=>setTimeout(r,100));
@@ -33,6 +50,9 @@ test('unsubscribe GET validates signed links and renders a confirmation without 
  const token=createHmac('sha256',secret).update(id).digest('hex');
  const response=await fetch(`${base}/unsubscribe/${id}?token=${token}`);
  assert.equal(response.status,200);
- assert.match(await response.text(),/Confirm unsubscribe/);
+ const html=await response.text();
+ assert.match(html,/Update your email preferences/);
+ assert.match(html,/recipient@example\.test/);
+ assert.match(html,/Unsubscribe from everything/);
  assert.equal(response.headers.get('cache-control'),'no-store');
 });

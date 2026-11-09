@@ -1,8 +1,7 @@
-import { PoolClient } from 'pg';
-export async function cmdaFeedback(c:PoolClient,contactId:string,type:string,eventKey:string,details:Record<string,unknown>={}){
- const link=(await c.query(`SELECT m.member_id,m.revision,ct.email FROM cmda_contact_history h JOIN cmda_members m ON m.member_id=h.member_id JOIN contacts ct ON ct.id=h.contact_id WHERE h.contact_id=$1`,[contactId])).rows[0];if(!link)return null;
- const event=(await c.query(`INSERT INTO cmda_feedback_outbox(member_id,contact_id,email,type,event_key,payload) VALUES($1,$2,$3,$4,$5,$6)
- ON CONFLICT(event_key) DO UPDATE SET event_key=EXCLUDED.event_key RETURNING id,sequence,created_at`,[link.member_id,contactId,link.email,type,eventKey,{...details,sourceRevision:Number(link.revision)}])).rows[0];
- if(type==='marketing.unsubscribed')await c.query('UPDATE cmda_members SET local_optout_sequence=greatest(local_optout_sequence,$2),marketing_allowed=false WHERE member_id=$1',[link.member_id,event.sequence]);
- return event;
+import { randomUUID } from 'node:crypto';
+import { MongoContext } from '../../db/database';
+export async function lockCmdaConsent():Promise<void>{}
+export async function cmdaFeedback(c:MongoContext,contactId:string,type:string,eventKey:string,details:Record<string,unknown>={}){
+ const history=await c.collection('cmda_contact_history').findOne({contact_id:contactId});if(!history)return null;const member=await c.collection('cmda_members').findOne({member_id:history.member_id}),contact=await c.collection('contacts').findOne({id:contactId});if(!member||!contact)return null;
+ const old=await c.collection('cmda_feedback_outbox').findOne({event_key:eventKey});if(old)return old;const counter=await c.collection('counters').findOneAndUpdate({id:'cmda_feedback_sequence'},{$inc:{value:1},$setOnInsert:{id:'cmda_feedback_sequence'}},{upsert:true,returnDocument:'after'}),sequence=Number(counter?.value??1),event={id:randomUUID(),sequence,member_id:member.member_id,contact_id:contactId,email:contact.email,type,event_key:eventKey,payload:{...details,sourceRevision:Number(member.revision)},status:'pending',attempts:0,next_attempt_at:new Date(),last_error:null,claim_token:null,claimed_at:null,created_at:new Date(),delivered_at:null};await c.collection('cmda_feedback_outbox').insertOne(event);if(type==='marketing.unsubscribed')await c.collection('cmda_members').updateOne({member_id:member.member_id},{$set:{marketing_allowed:false},$max:{local_optout_sequence:sequence}});return event;
 }
